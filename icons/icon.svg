@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#eef0f2"/>
+  <!-- question: right, indigo -->
+  <rect x="144" y="112" width="270" height="158" rx="46" fill="#2f4a8a"/>
+  <path d="M364 240h46v26l4 50z" fill="#2f4a8a" stroke="#2f4a8a" stroke-width="4" stroke-linejoin="round"/>
+  <!-- answer: left, ochre outline -->
+  <path d="M144 252h168a44 44 0 0 1 44 44v62a44 44 0 0 1-44 44H190l-44 36v-36h-2a44 44 0 0 1-44-44v-62a44 44 0 0 1 44-44z" fill="#ffffff" stroke="#8a5a14" stroke-width="16" stroke-linejoin="round"/>
+  <circle cx="186" cy="327" r="11" fill="#8a5a14"/>
+  <circle cx="228" cy="327" r="11" fill="#8a5a14"/>
+  <circle cx="270" cy="327" r="11" fill="#8a5a14"/>
+</svg>

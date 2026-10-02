@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<title>ひとり問答</title>
+<meta name="description" content="質問も回答も自分で書く、自問自答のためのチャット。">
+<meta name="theme-color" content="#eef0f2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14171c" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="ひとり問答">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Zen+Old+Mincho:wght@600;700&display=swap">
+<style>
+/* Layout: one-screen chat. Header (menu · title · 質問者/回答者 switch) / scrolling log / composer tinted by the active role. */
+:root {
+  --bg: #eef0f2;          /* cool paper */
+  --surface: #ffffff;
+  --line: #d9dde3;
+  --ink: #1d2430;
+  --muted: #6b7482;
+  --q: #2f4a8a;           /* 藍 — questioner */
+  --q-ink: #ffffff;
+  --q-soft: #e3e8f4;
+  --a: #8a5a14;           /* 黄土 — answerer */
+  --a-bubble: #ffffff;
+  --danger: #b4322a;
+  --ok: #3c9a5f;
+  --shadow: 0 1px 2px rgba(20, 30, 50, .06);
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+  --font-display: "Zen Old Mincho", "Hiragino Mincho ProN", "Yu Mincho", serif;
+  --app-h: 100%;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171c; --surface: #1d2128; --line: #2c323c; --ink: #e6e9ee; --muted: #8f98a6;
+    --q: #6f8fdc; --q-ink: #0f1420; --q-soft: #232c40;
+    --a: #e0b56a; --a-bubble: #1f242c;
+    --danger: #ff7a6e; --ok: #5cc184; --shadow: none; color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 16px; line-height: 1.7;
+  overflow: hidden; overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+[hidden] { display: none !important; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, textarea:focus-visible { outline: 2px solid var(--q); outline-offset: 2px; }
+
+.app { height: var(--app-h); display: flex; flex-direction: column; max-width: 760px; margin: 0 auto; position: relative; overflow: hidden; }
+
+/* Header */
+.bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px));
+  border-bottom: 1px solid var(--line); background: var(--bg);
+}
+.icon-btn {
+  width: 40px; height: 40px; border-radius: 10px; border: 0; background: transparent;
+  display: grid; place-items: center; flex: none; margin-left: -8px;
+}
+.icon-btn:hover { background: var(--surface); }
+.icon-btn svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; }
+.title {
+  flex: 1; min-width: 0; font-family: var(--font-display); font-weight: 700; font-size: 17px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: .02em;
+}
+
+/* Role switch */
+.role {
+  position: relative; display: grid; grid-template-columns: 1fr 1fr; flex: none;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 3px;
+}
+.role button {
+  position: relative; z-index: 1; border: 0; background: transparent;
+  padding: 5px 12px; font-size: 13px; font-weight: 700; letter-spacing: .04em; border-radius: 999px;
+  color: var(--muted); transition: color .2s;
+}
+.role .knob {
+  position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px);
+  border-radius: 999px; background: var(--q); transition: transform .22s ease, background .22s;
+}
+.role[data-role="a"] .knob { transform: translateX(100%); background: var(--a); }
+.role[data-role="q"] button[data-r="q"] { color: var(--q-ink); }
+.role[data-role="a"] button[data-r="a"] { color: var(--bg); }
+
+/* Log */
+.log {
+  flex: 1; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  padding: 20px max(16px, env(safe-area-inset-right, 0px)) 12px max(16px, env(safe-area-inset-left, 0px));
+  display: flex; flex-direction: column; gap: 4px;
+}
+.day { align-self: center; font-size: 11px; color: var(--muted); letter-spacing: .08em; padding: 10px 0 6px; }
+.row { display: flex; flex-direction: column; max-width: 84%; }
+.row.q { align-self: flex-end; align-items: flex-end; }
+.row.a { align-self: flex-start; align-items: flex-start; }
+.row.first { margin-top: 12px; }
+.who { font-size: 11px; font-weight: 700; letter-spacing: .12em; margin: 0 6px 3px; }
+.row.q .who { color: var(--q); }
+.row.a .who { color: var(--a); }
+.bubble {
+  border: 0; text-align: left; padding: 9px 14px; border-radius: 18px;
+  white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; min-width: 0; max-width: 100%;
+  font-size: 15.5px; line-height: 1.65; -webkit-user-select: text; user-select: text;
+}
+.row.q .bubble { background: var(--q); color: var(--q-ink); border-bottom-right-radius: 6px; }
+.row.a .bubble { background: var(--a-bubble); color: var(--ink); border: 1px solid var(--line); border-bottom-left-radius: 6px; box-shadow: var(--shadow); }
+.row.q:not(.last) .bubble { border-bottom-right-radius: 18px; }
+.row.a:not(.last) .bubble { border-bottom-left-radius: 18px; }
+.meta { font-size: 11px; color: var(--muted); margin: 2px 8px 0; font-variant-numeric: tabular-nums; }
+.acts { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.acts button {
+  font-size: 12.5px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface);
+}
+.acts button.del { color: var(--danger); }
+
+/* Empty state */
+.empty { margin: auto 0; display: flex; flex-direction: column; gap: 18px; padding: 24px 0; }
+.empty h2 { font-family: var(--font-display); font-weight: 700; font-size: 24px; text-align: center; margin: 0; text-wrap: balance; }
+.empty p { margin: 0; text-align: center; color: var(--muted); font-size: 14px; text-wrap: balance; }
+.sample { display: flex; flex-direction: column; gap: 6px; opacity: .55; pointer-events: none; }
+.sample-tag { align-self: center; font-size: 11px; letter-spacing: .14em; color: var(--muted); border: 1px dashed var(--line); border-radius: 999px; padding: 1px 10px; }
+
+/* Composer */
+.composer {
+  padding: 8px max(16px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  background: var(--bg);
+}
+.kb-open .composer { padding-bottom: 10px; }
+.box {
+  display: flex; align-items: flex-end; gap: 8px; background: var(--surface);
+  border: 1.5px solid var(--q); border-radius: 22px; padding: 6px 6px 6px 16px; transition: border-color .2s;
+}
+.composer[data-role="a"] .box { border-color: var(--a); }
+textarea {
+  flex: 1; min-width: 0; border: 0; outline: none; resize: none; background: transparent; color: var(--ink);
+  font: inherit; font-size: 16px; line-height: 1.55; padding: 7px 0; max-height: 40vh;
+}
+textarea::placeholder { color: var(--muted); }
+.send {
+  width: 40px; height: 40px; border-radius: 50%; border: 0; flex: none; display: grid; place-items: center;
+  background: var(--q); color: var(--q-ink); transition: background .2s, opacity .2s;
+}
+.composer[data-role="a"] .send { background: var(--a); color: var(--bg); }
+.send:disabled { opacity: .35; cursor: default; }
+.send svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.sub { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 6px; padding: 0 6px; font-size: 12px; color: var(--muted); }
+.chip {
+  border: 1px solid var(--line); background: transparent; border-radius: 999px; padding: 2px 10px; font-size: 12px; color: var(--muted); flex: none;
+}
+.chip[aria-pressed="true"] { color: var(--ink); border-color: var(--ink); }
+.who-now b { font-weight: 700; }
+.composer[data-role="q"] .who-now b { color: var(--q); }
+.composer[data-role="a"] .who-now b { color: var(--a); }
+
+/* Drawer */
+.scrim { position: absolute; inset: 0; background: rgba(10, 14, 22, .35); z-index: 5; }
+.drawer {
+  position: absolute; top: 0; bottom: 0; left: 0; width: min(320px, 86%); z-index: 6;
+  background: var(--surface); border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; transform: translateX(-102%); transition: transform .24s ease;
+}
+.drawer.open { transform: none; }
+.drawer-head { padding: calc(16px + env(safe-area-inset-top, 0px)) 16px 16px max(16px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 12px; border-bottom: 1px solid var(--line); }
+.brand { font-family: var(--font-display); font-weight: 700; font-size: 20px; letter-spacing: .06em; }
+.new-btn {
+  border: 1.5px solid var(--q); color: var(--q); background: transparent; border-radius: 12px; padding: 9px 12px;
+  font-weight: 700; text-align: left;
+}
+.list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 2px; }
+.item { display: flex; align-items: center; gap: 4px; border-radius: 10px; }
+.item.on { background: var(--q-soft); }
+.item .open { flex: 1; min-width: 0; border: 0; background: transparent; text-align: left; padding: 9px 10px; border-radius: 10px; }
+.item .t { display: block; font-size: 14.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item .d { display: block; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.item .x { border: 0; background: transparent; color: var(--muted); font-size: 12px; padding: 6px 8px; border-radius: 8px; flex: none; }
+.item .x.armed { color: var(--danger); font-weight: 700; }
+.list .none { color: var(--muted); font-size: 13px; padding: 12px; }
+.drawer-foot {
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 10px;
+}
+.where { display: flex; gap: 8px; align-items: center; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
+.backup { display: flex; gap: 8px; }
+.backup button { flex: 1; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 7px 8px; font-size: 13px; color: var(--ink); }
+
+.toast {
+  position: absolute; left: 50%; bottom: calc(120px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 10;
+  background: var(--ink); color: var(--bg); font-size: 13px; padding: 7px 14px; border-radius: 999px; max-width: calc(100% - 32px);
+}
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="bar">
+    <button class="icon-btn" id="menuBtn" aria-label="問答の一覧を開く">
+      <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+    </button>
+    <div class="title" id="title">新しい問答</div>
+    <div class="role" id="roleSwitch" data-role="q" role="radiogroup" aria-label="話し手">
+      <span class="knob"></span>
+      <button data-r="q" role="radio" aria-checked="true">質問者</button>
+      <button data-r="a" role="radio" aria-checked="false">回答者</button>
+    </div>
+  </header>
+
+  <main class="log" id="log" aria-live="polite"></main>
+
+  <footer class="composer" id="composer" data-role="q">
+    <form class="box" id="form">
+      <textarea id="input" rows="1" placeholder="自分に問いかける…" aria-label="メッセージ"></textarea>
+      <button class="send" id="sendBtn" type="submit" aria-label="送信" disabled>
+        <svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+      </button>
+    </form>
+    <div class="sub">
+      <span class="who-now">いまは <b id="whoNow">質問者</b> として書いています</span>
+      <button class="chip" id="autoBtn" type="button" aria-pressed="false" title="送信するたびに質問者と回答者を入れ替えます">送信後に交代</button>
+    </div>
+  </footer>
+
+  <div class="scrim" id="scrim" hidden></div>
+  <aside class="drawer" id="drawer" aria-label="問答の一覧">
+    <div class="drawer-head">
+      <div class="brand">ひとり問答</div>
+      <button class="new-btn" id="newBtn">＋ 新しい問答をはじめる</button>
+    </div>
+    <div class="list" id="list"></div>
+    <div class="drawer-foot">
+      <div class="where"><span class="dot"></span><span>この端末に保存しています</span></div>
+      <div class="backup">
+        <button type="button" id="exportBtn">書き出す</button>
+        <button type="button" id="importBtn">読み込む</button>
+      </div>
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
+    </div>
+  </aside>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const LS = "hitori-mondo:v1";
+  const ls = {
+    get(k, d) { try { const v = localStorage.getItem(LS + ":" + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem(LS + ":" + k, JSON.stringify(v)); return true; } catch { return false; } },
+  };
+
+  // ---- state ----
+  let threads = ls.get("threads", {});          // id -> {title, createdAt, updatedAt, messages:[{id, r, t, at}]}
+  let currentId = ls.get("current", null);
+  let role = ls.get("role", "q");
+  let autoSwap = ls.get("auto", false);
+  let openMsg = null;                            // message id whose actions are shown
+  let armedDelete = null;                        // thread id awaiting delete confirm
+
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  const cur = () => (currentId && threads[currentId]) || null;
+
+  function save() {
+    // drop threads that never got a message
+    for (const [id, t] of Object.entries(threads)) if (!t.messages.length && id !== currentId) delete threads[id];
+    if (!ls.set("threads", threads)) toast("保存できませんでした。端末の空き容量を確認してください");
+    ls.set("current", currentId);
+  }
+  // ask the browser not to evict our data
+  try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch {}
+
+  // ---- actions ----
+  function ensureThread() {
+    if (cur()) return cur();
+    const id = "t-" + uid(), now = Date.now();
+    threads[id] = { title: "", createdAt: now, updatedAt: now, messages: [] };
+    currentId = id;
+    return threads[id];
+  }
+
+  function send() {
+    const text = $("input").value.replace(/\s+$/, "");
+    if (!text.trim()) return;
+    const t = ensureThread();
+    const now = Date.now();
+    t.messages.push({ id: uid(), r: role, t: text, at: now });
+    t.updatedAt = now;
+    if (!t.title && role === "q") t.title = text.trim().split("\n")[0].slice(0, 40);
+    $("input").value = ""; ls.set("draft", "");
+    autosize(); updateSend();
+    openMsg = null;
+    save();
+    if (autoSwap) setRole(role === "q" ? "a" : "q");
+    render(true);
+    $("input").focus();
+  }
+
+  function setRole(r) {
+    role = r; ls.set("role", r);
+    $("roleSwitch").dataset.role = r;
+    $("composer").dataset.role = r;
+    $("roleSwitch").querySelectorAll("button").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.r === r)));
+    $("whoNow").textContent = r === "q" ? "質問者" : "回答者";
+    $("input").placeholder = r === "q" ? "自分に問いかける…" : "自分に答える…";
+  }
+
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); toast("コピーしました"); }
+    catch { toast("コピーできませんでした"); }
+  }
+
+  function msgAction(kind, mid) {
+    const t = cur(); if (!t) return;
+    const i = t.messages.findIndex((m) => m.id === mid); if (i < 0) return;
+    const m = t.messages[i];
+    openMsg = null;
+    if (kind === "copy") { copyText(m.t); render(); return; }
+    if (kind === "flip") m.r = m.r === "q" ? "a" : "q";
+    if (kind === "del") t.messages.splice(i, 1);
+    t.updatedAt = Date.now();
+    save(); render();
+  }
+
+  // ---- backup ----
+  async function exportAll() {
+    const items = Object.values(threads).filter((t) => t.messages.length);
+    if (!items.length) { toast("書き出す問答がまだありません"); return; }
+    const d = new Date();
+    const name = `hitori-mondo-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}.json`;
+    const body = JSON.stringify({ app: "hitori-mondo", version: 1, exportedAt: d.toISOString(), threads }, null, 1);
+    const file = new File([body], name, { type: "application/json" });
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: "ひとり問答のバックアップ" });
+        return;
+      }
+    } catch (e) { if (e && e.name === "AbortError") return; }
+    const url = URL.createObjectURL(file);
+    const a = document.createElement("a");
+    a.href = url; a.download = name; document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast("書き出しました");
+  }
+
+  async function importFile(f) {
+    try {
+      const data = JSON.parse(await f.text());
+      const incoming = data && data.app === "hitori-mondo" && data.threads;
+      if (!incoming || typeof incoming !== "object") throw new Error("format");
+      let added = 0, updated = 0;
+      for (const [id, t] of Object.entries(incoming)) {
+        if (!t || !Array.isArray(t.messages)) continue;
+        const mine = threads[id];
+        if (!mine) { threads[id] = t; added++; }
+        else if ((t.updatedAt || 0) > (mine.updatedAt || 0)) { threads[id] = t; updated++; }
+      }
+      save(); render();
+      toast(added || updated ? `${added}件を追加、${updated}件を更新しました` : "新しい問答はありませんでした");
+    } catch {
+      toast("読み込めませんでした。ひとり問答で書き出したファイルを選んでください");
+    }
+  }
+
+  // ---- render ----
+  const fmtTime = (ms) => new Date(ms).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+  const fmtDay = (ms) => {
+    const d = new Date(ms), today = new Date();
+    if (d.toDateString() === today.toDateString()) return "今日";
+    const y = new Date(today); y.setDate(today.getDate() - 1);
+    if (d.toDateString() === y.toDateString()) return "昨日";
+    return d.toLocaleDateString("ja-JP", { year: d.getFullYear() === today.getFullYear() ? undefined : "numeric", month: "long", day: "numeric", weekday: "short" });
+  };
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+
+  function render(scrollEnd) {
+    const log = $("log");
+    const nearEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
+    const t = cur();
+    $("title").textContent = t ? (t.title || "無題の問答") : "新しい問答";
+    log.replaceChildren();
+
+    if (!t || !t.messages.length) {
+      const e = el("div", "empty");
+      e.append(el("h2", null, "自分に、問いかけてみる。"),
+        el("p", null, "右上で「質問者」「回答者」を切り替えて書きます。質問は右、答えは左に並びます。"));
+      const s = el("div", "sample");
+      s.append(el("span", "sample-tag", "例"));
+      [["q", "本当は何がしたいんだろう？"], ["a", "週末を、誰にも説明しなくていい時間にしたい。"], ["q", "それを邪魔しているのは何？"]]
+        .forEach(([r, x], i, arr) => s.append(bubbleRow({ id: "", r, t: x, at: 0 }, true, i === arr.length - 1 || arr[i + 1][0] !== r, true)));
+      e.append(s);
+      log.append(e);
+    } else {
+      let lastDay = "", prev = null;
+      t.messages.forEach((m, i) => {
+        const day = fmtDay(m.at);
+        if (day !== lastDay) { log.append(el("div", "day", day)); lastDay = day; prev = null; }
+        const next = t.messages[i + 1];
+        const first = !prev || prev.r !== m.r;
+        const last = !next || next.r !== m.r || fmtDay(next.at) !== day;
+        log.append(bubbleRow(m, first, last, false));
+        prev = m;
+      });
+    }
+    if (scrollEnd || nearEnd) log.scrollTop = log.scrollHeight;
+    renderList();
+  }
+
+  function bubbleRow(m, first, last, sample) {
+    const row = el("div", "row " + m.r + (first ? " first" : "") + (last ? " last" : ""));
+    if (first) row.append(el("div", "who", m.r === "q" ? "問" : "答"));
+    const b = el("div", "bubble", m.t);
+    if (!sample) {
+      b.setAttribute("role", "button"); b.tabIndex = 0;
+      const toggle = () => { if (String(getSelection() || "")) return; openMsg = openMsg === m.id ? null : m.id; render(); };
+      b.addEventListener("click", toggle);
+      b.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+    }
+    row.append(b);
+    if (!sample && last) row.append(el("div", "meta", fmtTime(m.at)));
+    if (!sample && openMsg === m.id) {
+      const a = el("div", "acts");
+      const mk = (label, kind, cls) => { const x = el("button", cls || "", label); x.type = "button"; x.onclick = () => msgAction(kind, m.id); return x; };
+      a.append(mk("コピー", "copy"), mk(m.r === "q" ? "回答に移す" : "質問に移す", "flip"), mk("削除", "del", "del"));
+      row.append(a);
+    }
+    return row;
+  }
+
+  function renderList() {
+    const list = $("list");
+    list.replaceChildren();
+    const items = Object.entries(threads).filter(([, t]) => t.messages && t.messages.length)
+      .sort((a, b) => b[1].updatedAt - a[1].updatedAt);
+    if (!items.length) { list.append(el("div", "none", "まだ問答はありません。")); return; }
+    for (const [id, t] of items) {
+      const it = el("div", "item" + (id === currentId ? " on" : ""));
+      const o = el("button", "open"); o.type = "button";
+      o.append(el("span", "t", t.title || "無題の問答"),
+        el("span", "d", fmtDay(t.updatedAt) + " · " + t.messages.length + "件"));
+      o.onclick = () => { currentId = id; openMsg = null; armedDelete = null; save(); closeDrawer(); render(true); };
+      const x = el("button", "x" + (armedDelete === id ? " armed" : ""), armedDelete === id ? "削除する" : "削除");
+      x.type = "button";
+      x.setAttribute("aria-label", armedDelete === id ? "本当に削除する" : "この問答を削除");
+      x.onclick = () => {
+        if (armedDelete !== id) { armedDelete = id; renderList(); return; }
+        armedDelete = null; delete threads[id];
+        if (currentId === id) currentId = null;
+        save(); render();
+      };
+      it.append(o, x);
+      list.append(it);
+    }
+  }
+
+  // ---- drawer / toast ----
+  function openDrawer() { $("input").blur(); $("drawer").classList.add("open"); $("scrim").hidden = false; armedDelete = null; renderList(); }
+  function closeDrawer() { $("drawer").classList.remove("open"); $("scrim").hidden = true; }
+  let toastTimer;
+  function toast(msg) {
+    let t = document.querySelector(".toast");
+    if (!t) { t = el("div", "toast"); $("app").append(t); }
+    t.textContent = msg; t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 2400);
+  }
+
+  // ---- keep the composer above the on-screen keyboard (iOS standalone) ----
+  const vv = window.visualViewport;
+  if (vv) {
+    const fit = () => {
+      document.documentElement.style.setProperty("--app-h", vv.height + "px");
+      document.body.classList.toggle("kb-open", window.innerHeight - vv.height > 120);
+      window.scrollTo(0, 0);
+    };
+    vv.addEventListener("resize", fit);
+    vv.addEventListener("scroll", () => window.scrollTo(0, 0));
+    fit();
+  }
+
+  // ---- input ----
+  const input = $("input");
+  function autosize() { input.style.height = "auto"; input.style.height = input.scrollHeight + "px"; }
+  function updateSend() { $("sendBtn").disabled = !input.value.trim(); }
+  input.value = ls.get("draft", "");
+  input.addEventListener("input", () => { autosize(); updateSend(); ls.set("draft", input.value); });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); }
+  });
+  input.addEventListener("focus", () => setTimeout(() => { const l = $("log"); l.scrollTop = l.scrollHeight; }, 250));
+  $("form").addEventListener("submit", (e) => { e.preventDefault(); send(); });
+  // keep the keyboard open when tapping send
+  $("sendBtn").addEventListener("pointerdown", (e) => e.preventDefault());
+  $("roleSwitch").addEventListener("pointerdown", (e) => e.preventDefault());
+  $("roleSwitch").addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    setRole(b ? b.dataset.r : (role === "q" ? "a" : "q"));
+  });
+  $("autoBtn").addEventListener("click", () => {
+    autoSwap = !autoSwap; ls.set("auto", autoSwap);
+    $("autoBtn").setAttribute("aria-pressed", String(autoSwap));
+    toast(autoSwap ? "送信するたびに話し手が交代します" : "話し手は手動で切り替えます");
+  });
+  $("menuBtn").onclick = openDrawer;
+  $("scrim").onclick = closeDrawer;
+  $("newBtn").onclick = () => { currentId = null; openMsg = null; save(); setRole("q"); closeDrawer(); render(); input.focus(); };
+  $("exportBtn").onclick = exportAll;
+  $("importBtn").onclick = () => $("importFile").click();
+  $("importFile").onchange = (e) => { const f = e.target.files[0]; if (f) importFile(f); e.target.value = ""; };
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); });
+  // another tab changed the data
+  window.addEventListener("storage", (e) => {
+    if (e.key === LS + ":threads") { threads = ls.get("threads", {}); render(); }
+  });
+
+  setRole(role);
+  $("autoBtn").setAttribute("aria-pressed", String(autoSwap));
+  autosize(); updateSend();
+  render(true);
+
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
+  }
+})();
+</script>
+</body>
+</html>
