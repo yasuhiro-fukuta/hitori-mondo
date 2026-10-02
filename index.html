@@ -77,6 +77,13 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--q); outl
 .title {
   flex: 1; min-width: 0; font-family: var(--font-display); font-weight: 700; font-size: 17px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: .02em;
+  border: 0; background: transparent; text-align: left; padding: 4px 6px; margin-left: -6px; border-radius: 8px;
+}
+.title:not(:disabled):hover { background: var(--surface); }
+.title:disabled { cursor: default; }
+.title-input {
+  flex: 1; min-width: 0; font-family: var(--font-display); font-weight: 700; font-size: 17px; color: var(--ink);
+  background: var(--surface); border: 1.5px solid var(--q); border-radius: 8px; padding: 3px 6px; margin-left: -6px; outline: none;
 }
 
 /* Role switch */
@@ -212,7 +219,8 @@ textarea::placeholder { color: var(--muted); }
     <button class="icon-btn" id="menuBtn" aria-label="問答の一覧を開く">
       <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
     </button>
-    <div class="title" id="title">新しい問答</div>
+    <button class="title" id="title" type="button" aria-label="タイトルを変更" disabled>新しい問答</button>
+    <input class="title-input" id="titleInput" type="text" maxlength="60" enterkeyhint="done" aria-label="タイトル" hidden>
     <div class="role" id="roleSwitch" data-role="q" role="radiogroup" aria-label="話し手">
       <span class="knob"></span>
       <button data-r="q" role="radio" aria-checked="true">質問者</button>
@@ -390,6 +398,7 @@ textarea::placeholder { color: var(--muted); }
     const nearEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
     const t = cur();
     $("title").textContent = t ? (t.title || "無題の問答") : "新しい問答";
+    $("title").disabled = !(t && t.messages.length);
     log.replaceChildren();
 
     if (!t || !t.messages.length) {
@@ -464,6 +473,32 @@ textarea::placeholder { color: var(--muted); }
       list.append(it);
     }
   }
+
+  // ---- rename ----
+  function startRename() {
+    const t = cur(); if (!t) return;
+    const inp = $("titleInput");
+    inp.value = t.title || "";
+    $("title").hidden = true; inp.hidden = false;
+    inp.focus(); inp.select();
+  }
+  function endRename(commit) {
+    const inp = $("titleInput");
+    if (inp.hidden) return;
+    const t = cur();
+    if (commit && t) {
+      const v = inp.value.trim().slice(0, 60);
+      if (v !== (t.title || "")) { t.title = v; t.updatedAt = t.updatedAt || Date.now(); save(); }
+    }
+    inp.hidden = true; $("title").hidden = false;
+    render();
+  }
+  $("title").addEventListener("click", startRename);
+  $("titleInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); endRename(true); }
+    if (e.key === "Escape") { e.preventDefault(); endRename(false); }
+  });
+  $("titleInput").addEventListener("blur", () => endRename(true));
 
   // ---- drawer / toast ----
   function openDrawer() { $("input").blur(); $("drawer").classList.add("open"); $("scrim").hidden = false; armedDelete = null; renderList(); }
