@@ -1,5 +1,5 @@
 // ひとり問答 service worker: app shell works offline; updates arrive on the next launch.
-const VERSION = "v4";
+const VERSION = "v5";
 const SHELL = `shell-${VERSION}`;
 const RUNTIME = "runtime";
 const ASSETS = ["/", "/index.html", "/manifest.webmanifest", "/icons/icon.svg", "/icons/icon-192.png", "/icons/apple-touch-icon.png"];
