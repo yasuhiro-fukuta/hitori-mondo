@@ -32,6 +32,9 @@
   --a-bubble: #ffffff;
   --danger: #b4322a;
   --ok: #3c9a5f;
+  --claude: #b4532a;      /* Claude replies */
+  --claude-soft: #f7ebe4;
+  --claude-line: #e6c9b8;
   --shadow: 0 1px 2px rgba(20, 30, 50, .06);
   --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
   --font-display: "Zen Old Mincho", "Hiragino Mincho ProN", "Yu Mincho", serif;
@@ -44,6 +47,7 @@
     --q: #6f8fdc; --q-ink: #0f1420; --q-soft: #232c40;
     --a: #e0b56a; --a-bubble: #1f242c;
     --danger: #ff7a6e; --ok: #5cc184; --shadow: none; color-scheme: dark;
+    --claude: #ec9a73; --claude-soft: #2f231d; --claude-line: #5a3a2b;
   }
 }
 
@@ -166,12 +170,32 @@ textarea::placeholder { color: var(--muted); }
 .composer[data-role="a"] .send { background: var(--a); color: var(--bg); }
 .send:disabled { opacity: .35; cursor: default; }
 .send svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-.sub { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 6px; padding: 0 6px; font-size: 12px; color: var(--muted); }
+.sub { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px 8px; margin-top: 6px; padding: 0 6px; font-size: 12px; color: var(--muted); }
 .chip {
   border: 1px solid var(--line); background: transparent; border-radius: 999px; padding: 2px 10px; font-size: 12px; color: var(--muted); flex: none;
 }
 .chip[aria-pressed="true"] { color: var(--ink); border-color: var(--ink); }
 .who-now b { font-weight: 700; }
+.chips { display: flex; gap: 6px; flex: none; }
+.chip.ai[aria-pressed="true"] { color: var(--claude); border-color: var(--claude); background: var(--claude-soft); }
+.ai-mode .role { opacity: .45; pointer-events: none; }
+.ai-mode #autoBtn { display: none; }
+.ai-mode .who-now b { color: var(--claude) !important; }
+.row.c .who { color: var(--claude); letter-spacing: .04em; }
+.row.c .bubble { border-color: var(--claude-line); }
+.bubble.pending { color: var(--muted); }
+.bubble.pending::after { content: "…"; animation: blink 1.2s steps(3, end) infinite; }
+@keyframes blink { 50% { opacity: .2; } }
+.pass {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; padding: 10px 12px;
+  background: var(--claude-soft); border: 1px solid var(--claude-line); border-radius: 14px; font-size: 13px;
+}
+.pass label { flex-basis: 100%; color: var(--ink); }
+.pass input {
+  flex: 1; min-width: 0; font: inherit; font-size: 16px; padding: 6px 10px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+}
+.pass button { border: 0; border-radius: 10px; padding: 7px 14px; background: var(--claude); color: var(--surface); font-weight: 700; }
 .composer[data-role="q"] .who-now b { color: var(--q); }
 .composer[data-role="a"] .who-now b { color: var(--a); }
 
@@ -236,6 +260,11 @@ textarea::placeholder { color: var(--muted); }
   <main class="log" id="log" aria-live="polite"></main>
 
   <footer class="composer" id="composer" data-role="q">
+    <form class="pass" id="passForm" hidden>
+      <label for="passInput">Claude を使うための合言葉を入れてください（Vercel に設定した APP_PASSCODE）</label>
+      <input id="passInput" type="password" autocomplete="current-password" enterkeyhint="done">
+      <button type="submit">保存</button>
+    </form>
     <form class="box" id="form">
       <textarea id="input" rows="1" placeholder="自分に問いかける…" aria-label="メッセージ"></textarea>
       <button class="send" id="sendBtn" type="submit" aria-label="送信" disabled>
@@ -244,7 +273,10 @@ textarea::placeholder { color: var(--muted); }
     </form>
     <div class="sub">
       <span class="who-now">いまは <b id="whoNow">質問者</b> として書いています</span>
-      <button class="chip" id="autoBtn" type="button" aria-pressed="false" title="送信するたびに質問者と回答者を入れ替えます">送信後に交代</button>
+      <span class="chips">
+        <button class="chip" id="autoBtn" type="button" aria-pressed="false" title="送信するたびに質問者と回答者を入れ替えます">送信後に交代</button>
+        <button class="chip ai" id="aiBtn" type="button" aria-pressed="false" title="オンにすると、質問に Claude が答えます">Claude が答える</button>
+      </span>
     </div>
   </footer>
 
@@ -276,10 +308,15 @@ textarea::placeholder { color: var(--muted); }
   };
 
   // ---- state ----
-  let threads = ls.get("threads", {});          // id -> {title, createdAt, updatedAt, messages:[{id, r, t, at}]}
+  let threads = ls.get("threads", {});          // id -> {title, createdAt, updatedAt, messages:[{id, r, t, at, by?}]}
+  // drop Claude replies that never finished (app closed mid-answer)
+  for (const t of Object.values(threads)) t.messages = (t.messages || []).filter((m) => !m.pending);
   let currentId = ls.get("current", null);
   let role = ls.get("role", "q");
   let autoSwap = ls.get("auto", false);
+  let aiMode = ls.get("ai", false);              // true: Claude answers instead of me
+  let passcode = ls.get("pass", "");
+  let busy = false;                              // waiting for Claude
   let openMsg = null;                            // message id whose actions are shown
   let armedDelete = null;                        // thread id awaiting delete confirm
 
@@ -306,7 +343,8 @@ textarea::placeholder { color: var(--muted); }
 
   function send() {
     const text = $("input").value.replace(/\s+$/, "");
-    if (!text.trim()) return;
+    if (!text.trim() || busy) return;
+    if (aiMode && !passcode) { showPass(); return; }
     const t = ensureThread();
     const now = Date.now();
     t.messages.push({ id: uid(), r: role, t: text, at: now });
@@ -316,9 +354,87 @@ textarea::placeholder { color: var(--muted); }
     autosize(); updateSend();
     openMsg = null;
     save();
-    if (autoSwap) setRole(role === "q" ? "a" : "q");
+    if (autoSwap && !aiMode) setRole(role === "q" ? "a" : "q");
     render(true);
     $("input").focus();
+    if (aiMode) askClaude();
+  }
+
+  // ---- Claude ----
+  async function askClaude() {
+    const t = cur(); if (!t || busy) return;
+    if (!passcode) { showPass(); return; }
+    const history = t.messages.map(({ r, t: text, by }) => ({ r, t: text, ...(by ? { by } : {}) }));
+    const reply = { id: uid(), r: "a", by: "claude", t: "", at: Date.now(), pending: true };
+    t.messages.push(reply);
+    busy = true; updateSend(); render(true);
+    let finished = false;
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-passcode": passcode },
+        body: JSON.stringify({ messages: history }),
+      });
+      if (!res.ok) {
+        let msg = "Claude に届きませんでした";
+        try { msg = (await res.json()).message || msg; } catch {}
+        if (res.status === 401) { passcode = ""; ls.set("pass", ""); showPass(); }
+        throw new Error(msg);
+      }
+      const reader = res.body.getReader(), dec = new TextDecoder();
+      let buf = "";
+      const handle = (line) => {
+        if (!line.trim()) return;
+        const ev = JSON.parse(line);
+        if (ev.t === "delta") reply.t += ev.text;
+        else if (ev.t === "reset") reply.t = "";
+        else if (ev.t === "done") { reply.t = ev.text || reply.t; finished = true; if (ev.truncated) toast("返事が長すぎて途中で切れました"); }
+        else if (ev.t === "refusal") throw new Error("この内容には Claude が答えられませんでした");
+        else if (ev.t === "error") throw new Error(ev.message);
+        renderReply(reply);
+      };
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf("\n")) >= 0) { handle(buf.slice(0, i)); buf = buf.slice(i + 1); }
+      }
+      handle(buf);
+      if (!finished || !reply.t.trim()) throw new Error("返事が途中で切れました。もう一度送ってください");
+      delete reply.pending;
+      reply.at = Date.now();
+      t.updatedAt = reply.at;
+    } catch (e) {
+      t.messages.splice(t.messages.indexOf(reply), 1);
+      toast(navigator.onLine === false ? "オフラインです。つながってから問いをタップして「Claude に答えてもらう」を押してください" : (e.message || "Claude から返事を受け取れませんでした"));
+    } finally {
+      busy = false; updateSend(); save(); render();
+    }
+  }
+
+  // update just the streaming bubble instead of re-rendering the whole log
+  function renderReply(m) {
+    const b = document.querySelector(`[data-mid="${m.id}"]`);
+    if (!b) return; // another thread is on screen
+    b.textContent = m.t;
+    b.classList.toggle("pending", !m.t);
+    const log = $("log");
+    if (log.scrollHeight - log.scrollTop - log.clientHeight < 160) log.scrollTop = log.scrollHeight;
+  }
+
+  function showPass(focus = true) {
+    $("passForm").hidden = false;
+    if (focus) $("passInput").focus();
+  }
+
+  function setAiMode(on, boot) {
+    aiMode = on; ls.set("ai", on);
+    $("aiBtn").setAttribute("aria-pressed", String(on));
+    document.body.classList.toggle("ai-mode", on);
+    if (on) { setRole("q"); if (!passcode) showPass(!boot); }
+    else $("passForm").hidden = true;
+    updateWho();
   }
 
   function setRole(r) {
@@ -326,8 +442,14 @@ textarea::placeholder { color: var(--muted); }
     $("roleSwitch").dataset.role = r;
     $("composer").dataset.role = r;
     $("roleSwitch").querySelectorAll("button").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.r === r)));
-    $("whoNow").textContent = r === "q" ? "質問者" : "回答者";
-    $("input").placeholder = r === "q" ? "自分に問いかける…" : "自分に答える…";
+    updateWho();
+  }
+
+  function updateWho() {
+    $("whoNow").textContent = role === "q" ? "質問者" : "回答者";
+    $("whoNow").parentNode.lastChild.textContent = aiMode ? "。答えるのは Claude です" : " として書いています";
+    $("whoNow").parentNode.firstChild.textContent = aiMode ? "あなたは " : "いまは ";
+    $("input").placeholder = aiMode ? "Claude に問いかける…" : role === "q" ? "自分に問いかける…" : "自分に答える…";
   }
 
   async function copyText(text) {
@@ -341,7 +463,8 @@ textarea::placeholder { color: var(--muted); }
     const m = t.messages[i];
     openMsg = null;
     if (kind === "copy") { copyText(m.t); render(); return; }
-    if (kind === "flip") m.r = m.r === "q" ? "a" : "q";
+    if (kind === "ask") { render(); askClaude(); return; }
+    if (kind === "flip") { if (m.by) { toast("Claude の返事は移せません"); render(); return; } m.r = m.r === "q" ? "a" : "q"; }
     if (kind === "del") t.messages.splice(i, 1);
     t.updatedAt = Date.now();
     save(); render();
@@ -423,8 +546,9 @@ textarea::placeholder { color: var(--muted); }
         const day = fmtDay(m.at);
         if (day !== lastDay) { log.append(el("div", "day", day)); lastDay = day; prev = null; }
         const next = t.messages[i + 1];
-        const first = !prev || prev.r !== m.r;
-        const last = !next || next.r !== m.r || fmtDay(next.at) !== day;
+        const who = (x) => x.r + (x.by || "");
+        const first = !prev || who(prev) !== who(m);
+        const last = !next || who(next) !== who(m) || fmtDay(next.at) !== day;
         log.append(bubbleRow(m, first, last, false));
         prev = m;
       });
@@ -434,9 +558,11 @@ textarea::placeholder { color: var(--muted); }
   }
 
   function bubbleRow(m, first, last, sample) {
-    const row = el("div", "row " + m.r + (first ? " first" : "") + (last ? " last" : ""));
-    if (first) row.append(el("div", "who", m.r === "q" ? "問" : "答"));
-    const b = el("div", "bubble", m.t);
+    const row = el("div", "row " + m.r + (m.by ? " c" : "") + (first ? " first" : "") + (last ? " last" : ""));
+    if (first) row.append(el("div", "who", m.by ? "Claude" : m.r === "q" ? "問" : "答"));
+    const b = el("div", "bubble" + (m.pending && !m.t ? " pending" : ""), m.t || (m.pending ? "考えています" : ""));
+    if (m.id) b.dataset.mid = m.id;
+    if (m.pending) { row.append(b); return row; }
     if (!sample) {
       b.setAttribute("role", "button"); b.tabIndex = 0;
       const toggle = () => { if (String(getSelection() || "")) return; openMsg = openMsg === m.id ? null : m.id; render(); };
@@ -448,7 +574,11 @@ textarea::placeholder { color: var(--muted); }
     if (!sample && openMsg === m.id) {
       const a = el("div", "acts");
       const mk = (label, kind, cls) => { const x = el("button", cls || "", label); x.type = "button"; x.onclick = () => msgAction(kind, m.id); return x; };
-      a.append(mk("コピー", "copy"), mk(m.r === "q" ? "回答に移す" : "質問に移す", "flip"), mk("削除", "del", "del"));
+      const t = cur(), isLastQ = t && t.messages[t.messages.length - 1] === m && m.r === "q";
+      if (isLastQ && !busy) a.append(mk("Claude に答えてもらう", "ask"));
+      a.append(mk("コピー", "copy"));
+      if (!m.by) a.append(mk(m.r === "q" ? "回答に移す" : "質問に移す", "flip"));
+      a.append(mk("削除", "del", "del"));
       row.append(a);
     }
     return row;
@@ -493,7 +623,7 @@ textarea::placeholder { color: var(--muted); }
     const t = cur();
     if (!t || !t.messages.length) { toast("ダウンロードする問答がまだありません"); return; }
     const rows = [["番号", "話し手", "内容", "日時"]];
-    t.messages.forEach((m, i) => rows.push([i + 1, m.r === "q" ? "質問者" : "回答者", m.t, fmtStamp(m.at)]));
+    t.messages.forEach((m, i) => rows.push([i + 1, m.by === "claude" ? "Claude" : m.r === "q" ? "質問者" : "回答者", m.t, fmtStamp(m.at)]));
     const csv = "﻿" + rows.map((r) => r.map(csvCell).join(",")).join("\r\n") + "\r\n";
     const d = new Date(), z = (n) => String(n).padStart(2, "0");
     // ASCII name: some browsers drop non-ASCII download names and save as "download"
@@ -559,7 +689,7 @@ textarea::placeholder { color: var(--muted); }
   // ---- input ----
   const input = $("input");
   function autosize() { input.style.height = "auto"; input.style.height = input.scrollHeight + "px"; }
-  function updateSend() { $("sendBtn").disabled = !input.value.trim(); }
+  function updateSend() { $("sendBtn").disabled = busy || !input.value.trim(); }
   input.value = ls.get("draft", "");
   input.addEventListener("input", () => { autosize(); updateSend(); ls.set("draft", input.value); });
   input.addEventListener("keydown", (e) => {
@@ -593,6 +723,20 @@ textarea::placeholder { color: var(--muted); }
 
   setRole(role);
   $("autoBtn").setAttribute("aria-pressed", String(autoSwap));
+  $("aiBtn").addEventListener("click", () => {
+    setAiMode(!aiMode);
+    toast(aiMode ? "質問すると Claude が答えます" : "自問自答モードに戻しました");
+  });
+  $("passForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const v = $("passInput").value.trim();
+    if (!v) return;
+    passcode = v; ls.set("pass", v); $("passInput").value = "";
+    $("passForm").hidden = true;
+    toast("合言葉を保存しました");
+    input.focus();
+  });
+  setAiMode(aiMode, true);
   autosize(); updateSend();
   render(true);
 
