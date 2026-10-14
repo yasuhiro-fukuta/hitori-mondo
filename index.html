@@ -232,7 +232,16 @@ textarea::placeholder { color: var(--muted); }
   border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 10px;
 }
 .where { display: flex; gap: 8px; align-items: center; }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot.on { background: var(--ok); }
+.where span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.account { display: flex; flex-direction: column; gap: 8px; }
+.google-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 10px; padding: 9px 10px; font-size: 14px; font-weight: 500;
+}
+.google-btn svg { width: 18px; height: 18px; flex: none; }
+.link-btn { align-self: flex-start; border: 0; background: transparent; color: var(--muted); font-size: 12px; text-decoration: underline; padding: 0; }
 .backup { display: flex; gap: 8px; }
 .backup button { flex: 1; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 7px 8px; font-size: 13px; color: var(--ink); }
 
@@ -293,7 +302,14 @@ textarea::placeholder { color: var(--muted); }
     </div>
     <div class="list" id="list"></div>
     <div class="drawer-foot">
-      <div class="where"><span class="dot"></span><span>この端末に保存しています</span></div>
+      <div class="account">
+        <div class="where"><span class="dot" id="syncDot"></span><span id="syncText">この端末に保存しています</span></div>
+        <button type="button" class="google-btn" id="signInBtn" hidden>
+          <svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>
+          Google でログインして同期
+        </button>
+        <button type="button" class="link-btn" id="signOutBtn" hidden>ログアウト</button>
+      </div>
       <div class="backup">
         <button type="button" id="exportBtn">書き出す</button>
         <button type="button" id="importBtn">読み込む</button>
@@ -333,6 +349,144 @@ textarea::placeholder { color: var(--muted); }
     for (const [id, t] of Object.entries(threads)) if (!t.messages.length && id !== currentId) delete threads[id];
     if (!ls.set("threads", threads)) toast("保存できませんでした。端末の空き容量を確認してください");
     ls.set("current", currentId);
+    flush();
+  }
+
+  // ---- Google sign-in + sync (Firebase) ----
+  // Threads live at users/{uid}/threads/{threadId}. The device keeps its own copy in
+  // localStorage; each change is written up, and other devices' changes come down live.
+  const FB = "https://www.gstatic.com/firebasejs/13.0.0";
+  let fb = null;          // Firebase modules + instances once loaded
+  let cloud = null;       // { uid, email, unsub } while signed in
+  const written = new Map(); // threadId -> content key last known to be on the server
+
+  const toRemote = (t) => ({
+    title: t.title || "", createdAt: t.createdAt || Date.now(), updatedAt: t.updatedAt || Date.now(),
+    messages: t.messages.filter((m) => !m.pending).map(({ id, r, t: text, at, by }) => ({ id, r, t: text, at, ...(by ? { by } : {}) })),
+  });
+  const contentKey = (t) => JSON.stringify(toRemote(t));
+
+  function flush() {
+    if (!cloud || !fb) return;
+    const { F, db } = fb;
+    for (const [id, t] of Object.entries(threads)) {
+      if (!t.messages.some((m) => !m.pending)) continue;
+      const k = contentKey(t);
+      if (written.get(id) === k) continue;
+      written.set(id, k);
+      t.modAt = Date.now(); t.synced = true;
+      F.setDoc(F.doc(db, "users", cloud.uid, "threads", id), { ...toRemote(t), modAt: t.modAt })
+        .catch((e) => { written.delete(id); toast("同期できませんでした（" + (e.code || "error") + "）"); });
+    }
+    for (const id of [...written.keys()]) {
+      if (threads[id]) continue;
+      written.delete(id);
+      F.deleteDoc(F.doc(db, "users", cloud.uid, "threads", id)).catch(() => {});
+    }
+    ls.set("threads", threads);
+  }
+
+  function startSync(user) {
+    const { F, db } = fb;
+    cloud = { uid: user.uid, email: user.email || "" };
+    written.clear();
+    let settled = false;
+    cloud.unsub = F.onSnapshot(F.collection(db, "users", user.uid, "threads"), { includeMetadataChanges: true }, (snap) => {
+      const seen = new Set();
+      for (const d of snap.docs) {
+        seen.add(d.id);
+        const remote = d.data(), local = threads[d.id];
+        const rk = contentKey(remote);
+        written.set(d.id, rk);
+        if (local && local.messages.some((m) => m.pending)) continue; // Claude is mid-answer here
+        if (local && contentKey(local) === rk) { local.synced = true; local.modAt = remote.modAt; continue; }
+        if (!local || (remote.modAt || 0) >= (local.modAt || 0)) threads[d.id] = { ...remote, synced: true };
+      }
+      if (!snap.metadata.fromCache) {
+        for (const [id, t] of Object.entries(threads)) {
+          if (seen.has(id) || t.messages.some((m) => m.pending)) continue;
+          // synced before but gone from the server: deleted on another device.
+          // never synced: made on this device before signing in — flush() uploads it.
+          if (t.synced) delete threads[id];
+        }
+        if (!settled) { settled = true; setAccountUI(); }
+      }
+      if (currentId && !threads[currentId]) currentId = null;
+      flush();
+      render();
+    }, (e) => { toast("同期が止まりました（" + (e.code || "error") + "）。開き直してください"); });
+    setAccountUI();
+  }
+
+  function stopSync() {
+    if (cloud && cloud.unsub) cloud.unsub();
+    cloud = null;
+    written.clear();
+    setAccountUI();
+  }
+
+  function setAccountUI() {
+    const has = !!fb;
+    $("syncDot").classList.toggle("on", !!cloud);
+    $("syncText").textContent = cloud ? `${cloud.email || "Google アカウント"} で同期しています` : "この端末に保存しています";
+    $("signInBtn").hidden = !has || !!cloud;
+    $("signOutBtn").hidden = !cloud;
+  }
+
+  async function initCloud() {
+    let cfg = null;
+    try { cfg = (await import("/firebase-config.js")).firebaseConfig; } catch {}
+    if (!cfg) return; // sync not set up yet: local only
+    try {
+      const [App, A, F] = await Promise.all([
+        import(FB + "/firebase-app.js"), import(FB + "/firebase-auth.js"), import(FB + "/firebase-firestore.js"),
+      ]);
+      const app = App.initializeApp(cfg);
+      const auth = A.getAuth(app);
+      let db;
+      try { db = F.initializeFirestore(app, { localCache: F.persistentLocalCache({ tabManager: F.persistentMultipleTabManager() }) }); }
+      catch { db = F.getFirestore(app); }
+      fb = { A, F, auth, db };
+      A.getRedirectResult(auth).catch((e) => toast("ログインできませんでした（" + (e.code || "error") + "）"));
+      A.onAuthStateChanged(auth, (user) => (user ? startSync(user) : stopSync()));
+      setAccountUI();
+    } catch {
+      // offline on first launch, or the CDN is unreachable: stay local
+    }
+  }
+
+  async function signIn() {
+    if (!fb) return;
+    const { A, auth } = fb;
+    const provider = new A.GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: "select_account" });
+    try {
+      await A.signInWithPopup(auth, provider);
+      toast("ログインしました。この端末の問答もアカウントに保存します");
+    } catch (e) {
+      if (e.code === "auth/popup-blocked" || e.code === "auth/operation-not-supported-in-this-environment") {
+        return A.signInWithRedirect(auth, provider);
+      }
+      if (e.code !== "auth/popup-closed-by-user" && e.code !== "auth/cancelled-popup-request") {
+        toast("ログインできませんでした（" + (e.code || "error") + "）");
+      }
+    }
+  }
+
+  let armedSignOut = false;
+  async function signOut() {
+    if (!armedSignOut) {
+      armedSignOut = true; $("signOutBtn").textContent = "もう一度押すとログアウト（この端末の問答は消えます）";
+      setTimeout(() => { armedSignOut = false; $("signOutBtn").textContent = "ログアウト"; }, 4000);
+      return;
+    }
+    armedSignOut = false; $("signOutBtn").textContent = "ログアウト";
+    const { A, auth } = fb;
+    stopSync();
+    // the account keeps everything; clear this device so the next person can't read it
+    threads = {}; currentId = null; ls.set("threads", threads); ls.set("current", null);
+    await A.signOut(auth).catch(() => {});
+    render(); toast("ログアウトしました");
   }
   // ask the browser not to evict our data
   try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch {}
@@ -744,6 +898,10 @@ textarea::placeholder { color: var(--muted); }
   setAiMode(aiMode, true);
   autosize(); updateSend();
   render(true);
+
+  $("signInBtn").onclick = signIn;
+  $("signOutBtn").onclick = signOut;
+  initCloud();
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));

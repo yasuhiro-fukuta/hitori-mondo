@@ -1,5 +1,5 @@
 // ひとり問答 service worker: app shell works offline; updates arrive on the next launch.
-const VERSION = "v5";
+const VERSION = "v6";
 const SHELL = `shell-${VERSION}`;
 const RUNTIME = "runtime";
 const ASSETS = ["/", "/index.html", "/manifest.webmanifest", "/icons/icon.svg", "/icons/icon-192.png", "/icons/apple-touch-icon.png"];
@@ -31,8 +31,8 @@ self.addEventListener("fetch", (e) => {
     return;
   }
 
-  // Same-origin files and Google Fonts: cache, refresh in the background.
-  if (url.origin === location.origin || url.hostname.endsWith("fonts.googleapis.com") || url.hostname.endsWith("fonts.gstatic.com")) {
+  // Same-origin files, Google Fonts and the pinned Firebase SDK: cache, refresh in the background.
+  if (url.origin === location.origin || url.hostname.endsWith("fonts.googleapis.com") || url.hostname.endsWith("fonts.gstatic.com") || (url.hostname === "www.gstatic.com" && url.pathname.startsWith("/firebasejs/"))) {
     e.respondWith(
       caches.match(req).then((hit) => {
         const net = fetch(req).then((res) => {
