@@ -833,8 +833,12 @@ textarea::placeholder { color: var(--muted); }
   }
 
   // ---- keep the composer above the on-screen keyboard (iOS standalone) ----
+  // iOS doesn't shrink the layout when the keyboard opens, so size the app to the visible area by hand.
+  // Android Chrome already resizes the page (interactive-widget=resizes-content); doing it in JS there
+  // re-lays out the page while the keyboard switcher is open, and Android then closes the switcher.
   const vv = window.visualViewport;
-  if (vv) {
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  if (vv && isIOS) {
     const fit = () => {
       document.documentElement.style.setProperty("--app-h", vv.height + "px");
       document.body.classList.toggle("kb-open", window.innerHeight - vv.height > 120);
