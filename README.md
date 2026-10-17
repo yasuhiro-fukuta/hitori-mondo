@@ -26,12 +26,34 @@ vercel.json           sw.js をキャッシュさせないヘッダー
 
 Vercel にインポート（Framework Preset: Other、ビルドコマンドなし）。`main` = 本番、`staging` = プレビュー。
 
-## Claude 連携の設定（Vercel → Settings → Environment Variables）
+## 料金のしくみ（2026-10-17〜）
+
+- 無料：1日3回（Haiku）。Google ログイン必須。
+- 月額 ¥480（Play 定期購入 `monthly_480`）：Sonnet。原価 ¥250/月で頭打ち、超えたら Haiku（1日50回まで）。「深く考える」（Opus）は月30回。
+- 回数券 ¥240/20枚（Play 消費型 `tickets_20`）：Sonnet 1枚、Opus 3枚。
+- 1回の重さに上限：直近 15,000 字だけ送る、返事は Sonnet 1,500 / Opus 3,000 トークンまで → 最大原価 Sonnet 約¥9、Opus 約¥22。
+- 原価は毎回の実使用トークンから円換算して `billing/{uid}`（サーバー専用）に記録。数字は `lib/pricing.js`。
+- `npm test` で「どの使い方でも赤字にならない」ことを確認できる。
+
+## 構成（追加分）
+
+```
+api/chat.js      回答（ログイン確認 → 枠の予約 → Claude → 実原価で精算）
+api/me.js        残り回数
+api/purchase.js  Google Play の購入確認・付与（復元も同じ）
+lib/             料金・Firebase Admin・Play API・台帳
+firestore.rules  Firestore のルール（billing / purchases はサーバー専用）
+privacy.html / terms.html / tokushoho.html
+```
+
+## 環境変数（Vercel → Settings → Environment Variables）
 
 | 名前 | 値 |
 |---|---|
-| `ANTHROPIC_API_KEY` | Anthropic Console で作った API キー |
-| `APP_PASSCODE` | アプリで入力する合言葉（他人に API を使われないため） |
-| `ANTHROPIC_MODEL` | 任意。省略時 `claude-opus-5-5` |
+| `ANTHROPIC_API_KEY` | Anthropic Console の API キー |
+| `FIREBASE_SERVICE_ACCOUNT` | Firebase のサービスアカウント鍵（JSON を1行で） |
+| `PLAY_PACKAGE_NAME` | Play のパッケージ名（例 `jp.fromscratch.hitorimondo`） |
+| `APP_PASSCODE` | 任意。オーナー用の合言葉（入れると無制限） |
+| `USD_JPY` | 任意。原価計算の為替（既定 160） |
 
 設定後に再デプロイ。Production と Preview の両方にチェックを入れる。

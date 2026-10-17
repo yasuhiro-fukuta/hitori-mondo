@@ -1,0 +1,12 @@
+rules_version = '2';
+// ひとり問答: each user reads/writes only their own threads.
+// billing/{uid} and purchases/{token} are written by the server (Admin SDK) only.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+    match /billing/{uid} { allow read, write: if false; }
+    match /purchases/{id} { allow read, write: if false; }
+  }
+}
