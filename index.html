@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ひとり問答</title>
 <meta name="description" content="質問も回答も自分で書く、自問自答のためのチャット。">
 <meta name="theme-color" content="#eef0f2" media="(prefers-color-scheme: light)">
@@ -969,8 +969,9 @@ textarea::placeholder { color: var(--muted); }
 
   // ---- keep the composer above the on-screen keyboard (iOS standalone) ----
   // iOS doesn't shrink the layout when the keyboard opens, so size the app to the visible area by hand.
-  // Android Chrome already resizes the page (interactive-widget=resizes-content); doing it in JS there
-  // re-lays out the page while the keyboard switcher is open, and Android then closes the switcher.
+  // On Android the page is left alone when the keyboard opens (Chrome's default: the keyboard slides over
+  // the page and Chrome scrolls the input into view). Re-laying out the page while Gboard's
+  // "Change keyboard" menu is open makes Android close that menu.
   const vv = window.visualViewport;
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   if (vv && isIOS) {
