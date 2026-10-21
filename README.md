@@ -32,7 +32,7 @@ Vercel にインポート（Framework Preset: Other、ビルドコマンドな�
 - 月額 ¥480（Play 定期購入 `monthly_480`）：Sonnet。原価 ¥250/月で頭打ち、超えたら Haiku（1日50回まで）。「深く考える」（Opus）は月30回。
 - 回数券 ¥240/20枚（Play 消費型 `tickets_20`）：Sonnet 1枚、Opus 3枚。
 - 1回の重さに上限：直近 15,000 字だけ送る、返事は Sonnet 1,500 / Opus 3,000 トークンまで → 最大原価 Sonnet 約¥9、Opus 約¥22。
-- 原価は毎回の実使用トークンから円換算して `billing/{uid}`（サーバー専用）に記録。数字は `lib/pricing.js`。
+- 原価は毎回の実使用トークンから円換算して Upstash Redis の `hm:billing:{uid}` に記録（鍵ファイル不要。ログイン確認は Google の公開証明書で照合）。数字は `lib/pricing.js`。
 - `npm test` で「どの使い方でも赤字にならない」ことを確認できる。
 
 ## 構成（追加分）
@@ -41,8 +41,8 @@ Vercel にインポート（Framework Preset: Other、ビルドコマンドな�
 api/chat.js      回答（ログイン確認 → 枠の予約 → Claude → 実原価で精算）
 api/me.js        残り回数
 api/purchase.js  Google Play の購入確認・付与（復元も同じ）
-lib/             料金・Firebase Admin・Play API・台帳
-firestore.rules  Firestore のルール（billing / purchases はサーバー専用）
+lib/             料金・ログイン確認・Redis保存・Play API・台帳
+firestore.rules  Firestore のルール（問答の同期用）
 privacy.html / terms.html / tokushoho.html
 ```
 
@@ -51,8 +51,9 @@ privacy.html / terms.html / tokushoho.html
 | 名前 | 値 |
 |---|---|
 | `ANTHROPIC_API_KEY` | Anthropic Console の API キー |
-| `FIREBASE_SERVICE_ACCOUNT` | Firebase のサービスアカウント鍵（JSON を1行で） |
-| `PLAY_PACKAGE_NAME` | Play のパッケージ名（例 `jp.fromscratch.hitorimondo`） |
+| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | Vercel → Storage で Upstash Redis をつなぐと自動で入る |
+| `PLAY_PACKAGE_NAME` | Play 公開時。パッケージ名（例 `jp.fromscratch.hitorimondo`） |
+| `PLAY_SERVICE_ACCOUNT` | Play 公開時。購入確認用のサービスアカウント鍵（JSON） |
 | `APP_PASSCODE` | 任意。オーナー用の合言葉（入れると無制限） |
 | `USD_JPY` | 任意。原価計算の為替（既定 160） |
 

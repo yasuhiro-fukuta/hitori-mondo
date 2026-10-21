@@ -2,12 +2,13 @@
 // Auth: "Authorization: Bearer <Firebase ID token>" (normal users, metered by lib/ledger.js)
 //       or "x-passcode: <APP_PASSCODE>" (owner; unmetered).
 // Body: { messages: [{r, t, by?}], mode: "normal" | "deep" }
-// Env: ANTHROPIC_API_KEY, FIREBASE_SERVICE_ACCOUNT, APP_PASSCODE (optional), USD_JPY (optional).
+// Env: ANTHROPIC_API_KEY, KV_REST_API_URL/TOKEN (Upstash via Vercel), APP_PASSCODE (optional), USD_JPY (optional).
 // Response: NDJSON lines {t:"delta",text} / {t:"done",text,truncated,quota} / {t:"refusal"} / {t:"error",message}.
 // Errors before streaming: 401 login, 402 {error:"paywall", code, message, quota}.
 import { createHash, timingSafeEqual } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { verifyUser } from "../lib/firebase.js";
+import { storeConfigured } from "../lib/store.js";
 import { reserve, settle, refund, status, refreshSubscription, Paywall } from "../lib/ledger.js";
 import { MODELS, LIMITS, costYen } from "../lib/pricing.js";
 
@@ -86,8 +87,8 @@ export async function POST(request) {
   if (owner) {
     r = { kind: "owner", model: mode === "deep" ? "opus" : "sonnet" };
   } else {
-    if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
-      return json(503, { error: "not_configured", message: "サーバーに FIREBASE_SERVICE_ACCOUNT が設定されていません" });
+    if (!storeConfigured()) {
+      return json(503, { error: "not_configured", message: "回数を記録するデータベースがまだつながっていません" });
     }
     user = await verifyUser(request);
     if (!user) return json(401, { error: "login", message: "Claude に聞くには Google でログインしてください" });

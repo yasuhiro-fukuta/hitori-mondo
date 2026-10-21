@@ -4,17 +4,12 @@ import assert from "node:assert/strict";
 import { _setDb, reserve, settle, refund, summarize, grantTickets, Paywall } from "../lib/ledger.js";
 import { LIMITS, maxCostYen, costYen } from "../lib/pricing.js";
 import { trimThread } from "../api/chat.js";
+import { merge, increment } from "../lib/store.js";
 
-// Minimal in-memory Firestore with merge + FieldValue.increment.
+// In-memory stand-in for lib/store.js (same merge rules).
 function fakeDb() {
   const data = new Map();
-  const apply = (key, fields) => {
-    const cur = { ...(data.get(key) || {}) };
-    for (const [k, v] of Object.entries(fields)) {
-      cur[k] = v && v.constructor && v.constructor.name === "NumericIncrementTransform" ? (cur[k] || 0) + v.operand : v;
-    }
-    data.set(key, cur);
-  };
+  const apply = (key, fields) => data.set(key, merge(data.get(key), fields));
   const doc = (col, id) => {
     const key = col + "/" + id;
     return { key, get: async () => ({ data: () => data.get(key) }), set: async (f) => apply(key, f) };
@@ -104,4 +99,8 @@ test("trimThread keeps only the latest ~15k characters", () => {
   assert.equal(thread.at(-1).t, "最後の問い");
   const huge = trimThread([{ r: "q", t: "x".repeat(50_000) }]);
   assert.equal(huge.chars, LIMITS.historyChars);
+});
+
+test("store merge applies increments", () => {
+  assert.deepEqual(merge({ a: 1, b: 2 }, { a: increment(2), c: increment(-1), b: 5 }), { a: 3, b: 5, c: -1 });
 });

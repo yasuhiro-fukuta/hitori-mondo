@@ -2,6 +2,7 @@
 // and credits the account. Safe to call again for the same purchase (restore).
 // Body: { productId, purchaseToken }
 import { verifyUser } from "../lib/firebase.js";
+import { storeConfigured } from "../lib/store.js";
 import { grantSubscription, grantTickets, status, Paywall } from "../lib/ledger.js";
 import { getSubscription, ackSubscription, getProduct, consumeProduct } from "../lib/play.js";
 import { PRODUCTS, TICKETS_PER_PACK } from "../lib/pricing.js";
@@ -9,7 +10,7 @@ import { PRODUCTS, TICKETS_PER_PACK } from "../lib/pricing.js";
 const json = (s, b) => new Response(JSON.stringify(b), { status: s, headers: { "content-type": "application/json; charset=utf-8" } });
 
 export async function POST(request) {
-  if (!process.env.FIREBASE_SERVICE_ACCOUNT || !process.env.PLAY_PACKAGE_NAME) {
+  if (!storeConfigured() || !process.env.PLAY_SERVICE_ACCOUNT || !process.env.PLAY_PACKAGE_NAME) {
     return json(503, { error: "not_configured", message: "購入の確認がまだ設定されていません" });
   }
   const user = await verifyUser(request);
