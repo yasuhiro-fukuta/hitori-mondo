@@ -757,6 +757,11 @@ textarea::placeholder { color: var(--muted); }
     const m = t.messages[i];
     openMsg = null;
     if (kind === "copy") { copyText(m.t); render(); return; }
+    if (kind === "report") {
+      const body = "報告する回答（Claude）:\n" + m.t.slice(0, 1500) + "\n\n気になった点:\n";
+      location.href = "mailto:llcfromscratch@gmail.com?subject=" + encodeURIComponent("【ひとり問答】不適切な回答の報告") + "&body=" + encodeURIComponent(body);
+      render(); return;
+    }
     if (kind === "ask") { render(); askClaude(); return; }
     if (kind === "flip") { if (m.by) { toast("Claude の返事は移せません"); render(); return; } m.r = m.r === "q" ? "a" : "q"; }
     if (kind === "del") t.messages.splice(i, 1);
@@ -872,6 +877,7 @@ textarea::placeholder { color: var(--muted); }
       if (isLastQ && !busy) a.append(mk("Claude に答えてもらう", "ask"));
       a.append(mk("コピー", "copy"));
       if (!m.by) a.append(mk(m.r === "q" ? "回答に移す" : "質問に移す", "flip"));
+      if (m.by) a.append(mk("不適切な回答を報告", "report"));
       a.append(mk("削除", "del", "del"));
       row.append(a);
     }
