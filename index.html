@@ -642,7 +642,7 @@ textarea::placeholder { color: var(--muted); }
   let quotaFor = null;
   async function loadQuota() {
     try {
-      const res = await fetch("/api/me", { headers: await authHeaders() });
+      const res = await fetch("/api/me", { headers: await authHeaders(), cache: "no-store" });
       if (res.ok) { quota = (await res.json()).quota; renderQuota(); }
     } catch {}
   }

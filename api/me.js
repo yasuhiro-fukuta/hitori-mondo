@@ -3,7 +3,7 @@ import { verifyUser } from "../lib/firebase.js";
 import { storeConfigured } from "../lib/store.js";
 import { status, refreshSubscription } from "../lib/ledger.js";
 
-const json = (s, b) => new Response(JSON.stringify(b), { status: s, headers: { "content-type": "application/json; charset=utf-8" } });
+const json = (s, b) => new Response(JSON.stringify(b), { status: s, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store, private" } });
 
 export async function GET(request) {
   if (!storeConfigured()) return json(503, { error: "not_configured" });
