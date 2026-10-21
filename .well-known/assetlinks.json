@@ -1,0 +1,13 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "jp.fromscratch.hitorimondo",
+      "sha256_cert_fingerprints": [
+        "D3:19:47:9F:72:57:4E:E2:0C:E3:55:0C:02:B6:DB:1B:4B:0A:26:C8:51:8E:32:11:DF:E7:E6:16:54:D4:AB:48",
+        "A4:E8:EE:0A:95:CD:A1:8A:FB:53:13:83:2A:2A:9B:6E:CE:A6:21:01:9A:94:83:67:61:6F:F2:ED:1F:31:60:EE"
+      ]
+    }
+  }
+]

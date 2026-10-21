@@ -1,0 +1,51 @@
+{
+  "packageId": "jp.fromscratch.hitorimondo",
+  "host": "hitori-mondo.vercel.app",
+  "name": "ひとり問答",
+  "launcherName": "ひとり問答",
+  "display": "standalone",
+  "themeColor": "#EEF0F2",
+  "themeColorDark": "#000000",
+  "navigationColor": "#EEF0F2",
+  "navigationColorDark": "#000000",
+  "navigationDividerColor": "#000000",
+  "navigationDividerColorDark": "#000000",
+  "backgroundColor": "#EEF0F2",
+  "enableNotifications": false,
+  "startUrl": "/",
+  "iconUrl": "https://hitori-mondo.vercel.app/icons/icon-512.png",
+  "maskableIconUrl": "https://hitori-mondo.vercel.app/icons/maskable-512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "/home/claude/twa-build/upload-key.jks",
+    "alias": "upload"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [],
+  "generatorApp": "unknown",
+  "webManifestUrl": "https://hitori-mondo.vercel.app/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "features": {
+    "playBilling": {
+      "enabled": true
+    }
+  },
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://hitori-mondo.vercel.app/",
+  "minSdkVersion": 24,
+  "orientation": "portrait",
+  "fingerprints": [],
+  "additionalTrustedOrigins": [],
+  "retainedBundles": [],
+  "protocolHandlers": [],
+  "fileHandlers": [],
+  "launchHandlerClientMode": "",
+  "displayOverride": [],
+  "appVersion": "1.0.0"
+}

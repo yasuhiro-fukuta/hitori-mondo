@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ひとり問答</title>
 <meta name="description" content="質問も回答も自分で書く、自問自答のためのチャット。">
 <meta name="theme-color" content="#eef0f2" media="(prefers-color-scheme: light)">
@@ -191,16 +191,32 @@ textarea::placeholder { color: var(--muted); }
 .bubble.pending { color: var(--muted); }
 .bubble.pending::after { content: "…"; animation: blink 1.2s steps(3, end) infinite; }
 @keyframes blink { 50% { opacity: .2; } }
-.pass {
+.pass, .note {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; padding: 10px 12px;
   background: var(--claude-soft); border: 1px solid var(--claude-line); border-radius: 14px; font-size: 13px;
 }
-.pass label { flex-basis: 100%; color: var(--ink); }
+.pass label, .note p { flex-basis: 100%; color: var(--ink); margin: 0; }
 .pass input {
   flex: 1; min-width: 0; font: inherit; font-size: 16px; padding: 6px 10px; border-radius: 10px;
   border: 1px solid var(--line); background: var(--surface); color: var(--ink);
 }
-.pass button { border: 0; border-radius: 10px; padding: 7px 14px; background: var(--claude); color: var(--surface); font-weight: 700; }
+.pass button, .note button { border: 0; border-radius: 10px; padding: 7px 14px; background: var(--claude); color: var(--surface); font-weight: 700; }
+.note button.ghost { background: transparent; color: var(--claude); border: 1px solid var(--claude); }
+.note .plans { display: flex; flex-direction: column; gap: 8px; flex-basis: 100%; }
+.note .plans button { text-align: left; display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.note .plans small { font-weight: 500; opacity: .85; }
+.note .fine { flex-basis: 100%; color: var(--muted); font-size: 12px; }
+.note .x { margin-left: auto; background: transparent; color: var(--muted); padding: 4px 8px; font-weight: 500; }
+.quota { flex-basis: 100%; font-size: 11.5px; color: var(--muted); }
+.quota b { color: var(--claude); font-weight: 700; }
+.chip.deep { display: none; }
+.ai-mode .chip.deep { display: inline-block; }
+.chip.deep[aria-pressed="true"] { color: var(--surface); border-color: var(--claude); background: var(--claude); }
+.owner { display: flex; gap: 6px; }
+.owner input { flex: 1; min-width: 0; font: inherit; font-size: 14px; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+.owner button { border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 5px 10px; font-size: 13px; color: var(--ink); }
+.legal { display: flex; gap: 10px; flex-wrap: wrap; }
+.legal a { color: var(--muted); font-size: 11.5px; }
 .composer[data-role="q"] .who-now b { color: var(--q); }
 .composer[data-role="a"] .who-now b { color: var(--a); }
 
@@ -269,11 +285,19 @@ textarea::placeholder { color: var(--muted); }
   <main class="log" id="log" aria-live="polite"></main>
 
   <footer class="composer" id="composer" data-role="q">
-    <form class="pass" id="passForm" hidden>
-      <label for="passInput">Claude を使うための合言葉を入れてください（Vercel に設定した APP_PASSCODE）</label>
-      <input id="passInput" type="password" autocomplete="current-password" enterkeyhint="done">
-      <button type="submit">保存</button>
-    </form>
+    <div class="note" id="loginNote" hidden>
+      <p>Claude に聞くには Google でログインしてください。毎日3回まで無料です。</p>
+      <button type="button" id="loginNoteBtn">Google でログイン</button>
+    </div>
+    <div class="note" id="paywall" hidden>
+      <p id="paywallMsg">今日の無料3回を使い切りました。</p>
+      <div class="plans" id="plans">
+        <button type="button" data-buy="monthly">月額プラン <small>¥480／月・たっぷり使える＋「深く考える」月30回</small></button>
+        <button type="button" data-buy="tickets20" class="ghost">回数券 20枚 <small>¥240・1回1枚（深く考えるは3枚）</small></button>
+      </div>
+      <span class="fine" id="paywallFine">お支払いは Google Play で行います。月額はいつでも解約できます。</span>
+      <button type="button" class="x" id="paywallClose">閉じる</button>
+    </div>
     <form class="box" id="form">
       <textarea id="input" rows="1" placeholder="自分に問いかける…" aria-label="メッセージ"></textarea>
       <button class="send" id="sendBtn" type="submit" aria-label="送信" disabled>
@@ -282,9 +306,11 @@ textarea::placeholder { color: var(--muted); }
     </form>
     <div class="sub">
       <span class="who-now">いまは <b id="whoNow">質問者</b> として書いています</span>
+      <span class="quota" id="quota" hidden></span>
       <span class="chips">
         <button class="chip" id="autoBtn" type="button" aria-pressed="false" title="送信するたびに質問者と回答者を入れ替えます">送信後に交代</button>
         <button class="chip ai" id="aiBtn" type="button" aria-pressed="false" title="オンにすると、質問に Claude が答えます">Claude が答える</button>
+        <button class="chip deep" id="deepBtn" type="button" aria-pressed="false" title="上位モデルでじっくり答えます（月額プランか回数券3枚）">深く考える</button>
       </span>
       <div class="role" id="roleSwitch" data-role="q" role="radiogroup" aria-label="話し手">
         <span class="knob"></span>
@@ -310,11 +336,18 @@ textarea::placeholder { color: var(--muted); }
         </button>
         <button type="button" class="link-btn" id="signOutBtn" hidden>ログアウト</button>
       </div>
+      <button type="button" class="link-btn" id="restoreBtn" hidden>購入を復元</button>
       <div class="backup">
         <button type="button" id="exportBtn">書き出す</button>
         <button type="button" id="importBtn">読み込む</button>
       </div>
       <input type="file" id="importFile" accept="application/json,.json" hidden>
+      <button type="button" class="link-btn" id="ownerLink">オーナー用</button>
+      <form class="owner" id="passForm" hidden>
+        <input id="passInput" type="password" autocomplete="current-password" enterkeyhint="done" aria-label="オーナー用の合言葉">
+        <button type="submit">保存</button>
+      </form>
+      <div class="legal"><a href="/privacy.html">プライバシー</a><a href="/terms.html">利用規約</a><a href="/tokushoho.html">特定商取引法に基づく表記</a></div>
     </div>
   </aside>
 </div>
@@ -336,7 +369,9 @@ textarea::placeholder { color: var(--muted); }
   let role = ls.get("role", "q");
   let autoSwap = ls.get("auto", false);
   let aiMode = ls.get("ai", false);              // true: Claude answers instead of me
-  let passcode = ls.get("pass", "");
+  let passcode = ls.get("pass", "");              // owner only: unmetered access
+  let deep = ls.get("deep", false);              // "深く考える": Opus instead of Sonnet
+  let quota = null;                              // {freeLeft, tickets, sub} from the server
   let busy = false;                              // waiting for Claude
   let openMsg = null;                            // message id whose actions are shown
   let armedDelete = null;                        // thread id awaiting delete confirm
@@ -431,6 +466,10 @@ textarea::placeholder { color: var(--muted); }
     $("syncText").textContent = cloud ? `${cloud.email || "Google アカウント"} で同期しています` : "この端末に保存しています";
     $("signInBtn").hidden = !has || !!cloud;
     $("signOutBtn").hidden = !cloud;
+    $("restoreBtn").hidden = !cloud || !billingAvailable();
+    if (cloud) $("loginNote").hidden = true;
+    if (cloud && cloud.uid !== quotaFor) { quotaFor = cloud.uid; loadQuota(); }
+    if (!cloud) { quotaFor = null; quota = null; renderQuota(); }
   }
 
   async function initCloud() {
@@ -503,7 +542,7 @@ textarea::placeholder { color: var(--muted); }
   function send() {
     const text = $("input").value.replace(/\s+$/, "");
     if (!text.trim() || busy) return;
-    if (aiMode && !passcode) { showPass(); return; }
+    if (aiMode && !passcode && !cloud) { showLogin(); return; }
     const t = ensureThread();
     const now = Date.now();
     t.messages.push({ id: uid(), r: role, t: text, at: now });
@@ -522,7 +561,7 @@ textarea::placeholder { color: var(--muted); }
   // ---- Claude ----
   async function askClaude() {
     const t = cur(); if (!t || busy) return;
-    if (!passcode) { showPass(); return; }
+    if (!passcode && !cloud) { showLogin(); return; }
     const history = t.messages.map(({ r, t: text, by }) => ({ r, t: text, ...(by ? { by } : {}) }));
     const reply = { id: uid(), r: "a", by: "claude", t: "", at: Date.now(), pending: true };
     t.messages.push(reply);
@@ -531,14 +570,15 @@ textarea::placeholder { color: var(--muted); }
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
-        headers: { "content-type": "application/json", "x-passcode": passcode },
-        body: JSON.stringify({ messages: history }),
+        headers: await authHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify({ messages: history, mode: deep ? "deep" : "normal" }),
       });
       if (!res.ok) {
-        let msg = "Claude に届きませんでした";
-        try { msg = (await res.json()).message || msg; } catch {}
-        if (res.status === 401) { passcode = ""; ls.set("pass", ""); showPass(); }
-        throw new Error(msg);
+        let data = {};
+        try { data = await res.json(); } catch {}
+        if (res.status === 402) { if (data.quota) { quota = data.quota; renderQuota(); } showPaywall(data.message, data.code); throw new Error(""); }
+        if (res.status === 401) showLogin();
+        throw new Error(data.message || "Claude に届きませんでした");
       }
       const reader = res.body.getReader(), dec = new TextDecoder();
       let buf = "";
@@ -547,7 +587,12 @@ textarea::placeholder { color: var(--muted); }
         const ev = JSON.parse(line);
         if (ev.t === "delta") reply.t += ev.text;
         else if (ev.t === "reset") reply.t = "";
-        else if (ev.t === "done") { reply.t = ev.text || reply.t; finished = true; if (ev.truncated) toast("返事が長すぎて途中で切れました"); }
+        else if (ev.t === "done") {
+          reply.t = ev.text || reply.t; finished = true;
+          if (ev.model) reply.model = ev.model;
+          if (ev.quota) { quota = ev.quota; renderQuota(); }
+          if (ev.truncated) toast("返事が長かったので途中までです。続きは「続けて」と問いかけてください");
+        }
         else if (ev.t === "refusal") throw new Error("この内容には Claude が答えられませんでした");
         else if (ev.t === "error") throw new Error(ev.message);
         renderReply(reply);
@@ -566,7 +611,7 @@ textarea::placeholder { color: var(--muted); }
       t.updatedAt = reply.at;
     } catch (e) {
       t.messages.splice(t.messages.indexOf(reply), 1);
-      toast(navigator.onLine === false ? "オフラインです。つながってから問いをタップして「Claude に答えてもらう」を押してください" : (e.message || "Claude から返事を受け取れませんでした"));
+      if (e.message !== "") toast(navigator.onLine === false ? "オフラインです。つながってから問いをタップして「Claude に答えてもらう」を押してください" : (e.message || "Claude から返事を受け取れませんでした"));
     } finally {
       busy = false; updateSend(); save(); render();
     }
@@ -582,17 +627,107 @@ textarea::placeholder { color: var(--muted); }
     if (log.scrollHeight - log.scrollTop - log.clientHeight < 160) log.scrollTop = log.scrollHeight;
   }
 
-  function showPass(focus = true) {
-    $("passForm").hidden = false;
-    if (focus) $("passInput").focus();
+  async function authHeaders(h = {}) {
+    if (passcode) h["x-passcode"] = passcode;
+    if (cloud && fb && fb.auth.currentUser) h.authorization = "Bearer " + (await fb.auth.currentUser.getIdToken());
+    return h;
+  }
+
+  function showLogin() {
+    $("paywall").hidden = true;
+    $("loginNote").hidden = false;
+  }
+
+  // ---- plan / quota ----
+  let quotaFor = null;
+  async function loadQuota() {
+    try {
+      const res = await fetch("/api/me", { headers: await authHeaders(), cache: "no-store" });
+      if (res.ok) { quota = (await res.json()).quota; renderQuota(); }
+    } catch {}
+  }
+
+  function renderQuota() {
+    const q = $("quota");
+    if (!aiMode || !quota || passcode) { q.hidden = true; return; }
+    const parts = [];
+    if (quota.sub) parts.push(`月額プラン <b>残り${quota.sub.planLeftPct}%</b>・深く考える あと${quota.sub.deepLeft}回`);
+    if (quota.tickets) parts.push(`回数券 <b>${quota.tickets}枚</b>`);
+    if (!quota.sub) parts.push(`今日の無料 <b>あと${quota.freeLeft}回</b>`);
+    q.innerHTML = parts.join("　");
+    q.hidden = false;
+  }
+
+  function showPaywall(message, code) {
+    $("loginNote").hidden = true;
+    $("paywallMsg").textContent = message || "続けるには月額プランか回数券をお使いください。";
+    const can = billingAvailable();
+    $("plans").hidden = !can;
+    $("plans").querySelector('[data-buy="monthly"]').hidden = !!(quota && quota.sub);
+    $("paywallFine").textContent = can
+      ? "お支払いは Google Play で行います。月額はいつでも解約できます。"
+      : "購入は Google Play のアプリ版「ひとり問答」からできます。";
+    $("paywall").hidden = false;
+  }
+
+  // ---- Google Play billing (Digital Goods API; works inside the Play Store app) ----
+  const PLAY = "https://play.google.com/billing";
+  const SKU = { monthly: "monthly_480", tickets20: "tickets_20" };
+  const billingAvailable = () => "getDigitalGoodsService" in window;
+
+  async function buy(kind) {
+    if (!cloud) { showLogin(); return; }
+    const sku = SKU[kind];
+    try {
+      await window.getDigitalGoodsService(PLAY);
+      const req = new PaymentRequest([{ supportedMethods: PLAY, data: { sku } }], { total: { label: "合計", amount: { currency: "JPY", value: "0" } } });
+      const res = await req.show();
+      const token = res.details && res.details.purchaseToken;
+      if (!token) { await res.complete("fail"); throw new Error("購入情報を受け取れませんでした"); }
+      const ok = await registerPurchase(sku, token);
+      await res.complete(ok ? "success" : "fail");
+      if (ok) { $("paywall").hidden = true; toast(kind === "monthly" ? "月額プランが使えるようになりました" : "回数券を20枚追加しました"); }
+    } catch (e) {
+      if (e && e.name === "AbortError") return; // closed the purchase sheet
+      toast(e.message || "購入できませんでした");
+    }
+  }
+
+  async function registerPurchase(productId, purchaseToken) {
+    const res = await fetch("/api/purchase", {
+      method: "POST",
+      headers: await authHeaders({ "content-type": "application/json" }),
+      body: JSON.stringify({ productId, purchaseToken }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (data.quota) { quota = data.quota; renderQuota(); }
+    if (!res.ok) { toast(data.message || "購入を確認できませんでした"); return false; }
+    return true;
+  }
+
+  async function restorePurchases() {
+    if (!cloud || !billingAvailable()) return;
+    try {
+      const svc = await window.getDigitalGoodsService(PLAY);
+      const list = await svc.listPurchases();
+      if (!list.length) { toast("復元できる購入はありませんでした"); return; }
+      for (const p of list) await registerPurchase(p.itemId, p.purchaseToken);
+      toast("購入を復元しました");
+    } catch { toast("購入を復元できませんでした"); }
+  }
+
+  function setDeep(on) {
+    deep = on; ls.set("deep", on);
+    $("deepBtn").setAttribute("aria-pressed", String(on));
   }
 
   function setAiMode(on, boot) {
     aiMode = on; ls.set("ai", on);
     $("aiBtn").setAttribute("aria-pressed", String(on));
     document.body.classList.toggle("ai-mode", on);
-    if (on) { setRole("q"); if (!passcode) showPass(!boot); }
-    else $("passForm").hidden = true;
+    if (on) { setRole("q"); if (!passcode && !cloud && !boot) showLogin(); }
+    else { $("loginNote").hidden = true; $("paywall").hidden = true; }
+    renderQuota();
     updateWho();
   }
 
@@ -622,6 +757,11 @@ textarea::placeholder { color: var(--muted); }
     const m = t.messages[i];
     openMsg = null;
     if (kind === "copy") { copyText(m.t); render(); return; }
+    if (kind === "report") {
+      const body = "報告する回答（Claude）:\n" + m.t.slice(0, 1500) + "\n\n気になった点:\n";
+      location.href = "mailto:llcfromscratch@gmail.com?subject=" + encodeURIComponent("【ひとり問答】不適切な回答の報告") + "&body=" + encodeURIComponent(body);
+      render(); return;
+    }
     if (kind === "ask") { render(); askClaude(); return; }
     if (kind === "flip") { if (m.by) { toast("Claude の返事は移せません"); render(); return; } m.r = m.r === "q" ? "a" : "q"; }
     if (kind === "del") t.messages.splice(i, 1);
@@ -737,6 +877,7 @@ textarea::placeholder { color: var(--muted); }
       if (isLastQ && !busy) a.append(mk("Claude に答えてもらう", "ask"));
       a.append(mk("コピー", "copy"));
       if (!m.by) a.append(mk(m.r === "q" ? "回答に移す" : "質問に移す", "flip"));
+      if (m.by) a.append(mk("不適切な回答を報告", "report"));
       a.append(mk("削除", "del", "del"));
       row.append(a);
     }
@@ -833,8 +974,13 @@ textarea::placeholder { color: var(--muted); }
   }
 
   // ---- keep the composer above the on-screen keyboard (iOS standalone) ----
+  // iOS doesn't shrink the layout when the keyboard opens, so size the app to the visible area by hand.
+  // On Android the page is left alone when the keyboard opens (Chrome's default: the keyboard slides over
+  // the page and Chrome scrolls the input into view). Re-laying out the page while Gboard's
+  // "Change keyboard" menu is open makes Android close that menu.
   const vv = window.visualViewport;
-  if (vv) {
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  if (vv && isIOS) {
     const fit = () => {
       document.documentElement.style.setProperty("--app-h", vv.height + "px");
       document.body.classList.toggle("kb-open", window.innerHeight - vv.height > 120);
@@ -892,9 +1038,19 @@ textarea::placeholder { color: var(--muted); }
     if (!v) return;
     passcode = v; ls.set("pass", v); $("passInput").value = "";
     $("passForm").hidden = true;
-    toast("合言葉を保存しました");
-    input.focus();
+    renderQuota();
+    toast("オーナー用の合言葉を保存しました");
   });
+  $("ownerLink").onclick = () => { $("passForm").hidden = !$("passForm").hidden; if (!$("passForm").hidden) $("passInput").focus(); };
+  $("deepBtn").addEventListener("click", () => {
+    setDeep(!deep);
+    toast(deep ? "深く考える：上位モデルでじっくり答えます" : "いつもの速さで答えます");
+  });
+  $("loginNoteBtn").onclick = signIn;
+  $("paywallClose").onclick = () => { $("paywall").hidden = true; };
+  $("plans").addEventListener("click", (e) => { const b = e.target.closest("[data-buy]"); if (b) buy(b.dataset.buy); });
+  $("restoreBtn").onclick = restorePurchases;
+  setDeep(deep);
   setAiMode(aiMode, true);
   autosize(); updateSend();
   render(true);
