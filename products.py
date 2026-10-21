@@ -36,7 +36,7 @@ show(r, "subscription monthly_480")
 show(s.post(f"{A}/subscriptions/monthly_480/basePlans/monthly:activate", json={}), "activate base plan")
 
 # --- tickets (one-time, consumable) ---
-r = s.get(f"{A}/inappproducts/tickets_20")
+r = s.get(f"{A}/onetimeproducts/tickets_20")
 if r.status_code == 404:
     r = s.post(f"{A}/inappproducts?autoConvertMissingPrices=true", json={
         "packageName": PKG, "sku": "tickets_20", "status": "active", "purchaseType": "managedUser",
@@ -49,9 +49,9 @@ if not show(r, "inapp tickets_20 (legacy)"):
             "purchaseOptions": [{"purchaseOptionId": "default", "buyOption": {"legacyCompatible": True},
                                  "regionalPricingAndAvailabilityConfigs": [
                                      {"regionCode": "JP", "price": {"currencyCode": "JPY", "units": "240"}, "availability": "AVAILABLE"}]}]}
-    r = s.patch(f"{A}/oneTimeProducts/tickets_20?allowMissing=true&updateMask=listings,purchaseOptions&{RV}", json=body)
+    r = s.patch(f"{A}/onetimeproducts/tickets_20?allowMissing=true&updateMask=listings,purchaseOptions&{RV}", json=body)
     show(r, "onetime tickets_20")
-    r = s.post(f"{A}/oneTimeProducts/-/purchaseOptions:batchUpdateStates", json={"requests": [
+    r = s.post(f"{A}/onetimeproducts/tickets_20/purchaseOptions:batchUpdateStates", json={"requests": [
         {"activatePurchaseOptionRequest": {"packageName": PKG, "productId": "tickets_20", "purchaseOptionId": "default"}}]})
     show(r, "activate tickets_20")
 print("END")
