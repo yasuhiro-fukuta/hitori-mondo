@@ -1,8 +1,9 @@
 // POST /api/chat — Claude answers the latest question in a thread.
 // Auth: "Authorization: Bearer <Firebase ID token>" (normal users, metered by lib/ledger.js)
-//       or "x-passcode: <APP_PASSCODE>" (owner; unmetered).
+//       or "x-passcode: <APP_PASSCODE>" (owner; unmetered),
+//       or DEV_PASSPHRASE at the start of the thread's first message + the developer's Google login (unmetered, see lib/devpass.js).
 // Body: { messages: [{r, t, by?}], mode: "normal" | "deep" }
-// Env: ANTHROPIC_API_KEY, KV_REST_API_URL/TOKEN (Upstash via Vercel), APP_PASSCODE (optional), USD_JPY (optional).
+// Env: ANTHROPIC_API_KEY, DEV_PASSPHRASE (optional), DEV_OWNER_EMAILS / DEV_OWNER_UIDS (optional), KV_REST_API_URL/TOKEN (Upstash via Vercel), APP_PASSCODE (optional), USD_JPY (optional).
 // Response: NDJSON lines {t:"delta",text} / {t:"done",text,truncated,quota} / {t:"refusal"} / {t:"error",message}.
 // Errors before streaming: 401 login, 402 {error:"paywall", code, message, quota}.
 import { createHash, timingSafeEqual } from "node:crypto";
@@ -11,6 +12,7 @@ import { verifyUser } from "../lib/firebase.js";
 import { storeConfigured } from "../lib/store.js";
 import { reserve, settle, refund, status, refreshSubscription, Paywall } from "../lib/ledger.js";
 import { MODELS, LIMITS, costYen } from "../lib/pricing.js";
+import { checkDevPassphrase, isDevOwner } from "../lib/devpass.js";
 
 const MAX_CHARS = 300_000;
 
@@ -23,6 +25,11 @@ const SYSTEM = `あなたは、ユーザーの自問自答に付き合う対話�
 
 const json = (status, body) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json; charset=utf-8" } });
+
+// A one-off reply that is not from Claude (e.g. the developer passphrase alone).
+const note = (text) => new Response(JSON.stringify({ t: "done", text }) + "\n", {
+  headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store" },
+});
 
 function passcodeOk(given) {
   const expected = process.env.APP_PASSCODE;
@@ -72,20 +79,35 @@ export async function POST(request) {
 
   let body;
   try { body = await request.json(); } catch { return json(400, { error: "bad_request", message: "リクエストが読めません" }); }
-  const raw = Array.isArray(body?.messages) ? body.messages : null;
+  let raw = Array.isArray(body?.messages) ? body.messages : null;
   if (!raw || JSON.stringify(raw).length > MAX_CHARS) {
     return json(400, { error: "bad_request", message: "問答が長すぎるか、形式が違います" });
   }
   const mode = body?.mode === "deep" ? "deep" : "normal";
+
+  // Developer passphrase at the start of the conversation: checked on the full thread
+  // (before trimming) and always removed from what is sent to Claude.
+  const dev = checkDevPassphrase(raw);
+  raw = dev.messages;
+
   const { thread, chars } = trimThread(raw);
   const messages = toApiMessages(thread);
-  if (!messages) return json(400, { error: "bad_request", message: "最後が問いになっていません" });
 
   // Who is asking, and which model they get.
   const owner = passcodeOk(request.headers.get("x-passcode"));
   let user = null, r = null;
+  if (dev.ok && !owner) {
+    user = await verifyUser(request);
+    if (!isDevOwner(user)) user = null; // not the developer → normal limits below
+  }
+  const devMode = dev.ok && (owner || !!user);
+  if (devMode && !messages) return note("開発者モード：この会話では回数制限なしで「Claude が答える」「深く考える」を使えます。続けて問いを書いてください。");
+  if (!messages) return json(400, { error: "bad_request", message: "最後が問いになっていません" });
+
   if (owner) {
     r = { kind: "owner", model: mode === "deep" ? "opus" : "sonnet" };
+  } else if (devMode) {
+    r = { kind: "dev", model: mode === "deep" ? "opus" : "sonnet" }; // unmetered; real cost still recorded by settle()
   } else {
     if (!storeConfigured()) {
       return json(503, { error: "not_configured", message: "回数を記録するデータベースがまだつながっていません" });
@@ -127,12 +149,12 @@ export async function POST(request) {
         const final = await s.finalMessage();
         const u = final.usage || {};
         const yen = costYen(r.model, (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0), u.output_tokens || 0);
-        if (user) { await settle(user.uid, r, yen); charged = true; }
+        if (user && storeConfigured()) { await settle(user.uid, r, yen); charged = true; }
         if (final.stop_reason === "refusal") { send({ t: "refusal" }); return; }
         const text = final.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
-        send({ t: "done", text, model: r.model, truncated: final.stop_reason === "max_tokens", quota: user ? await status(user.uid) : null });
+        send({ t: "done", text, model: r.model, truncated: final.stop_reason === "max_tokens", quota: user && r.kind !== "dev" ? await status(user.uid) : null, ...(r.kind === "dev" ? { dev: true } : {}) });
       } catch (err) {
-        if (user && !charged) await refund(user.uid, r).catch((e) => console.error("refund", e));
+        if (user && !charged && r.kind !== "dev") await refund(user.uid, r).catch((e) => console.error("refund", e));
         if (err?.name === "AbortError" || request.signal?.aborted) return;
         let message = "Claude から返事を受け取れませんでした";
         if (err instanceof Anthropic.AuthenticationError) message = "API キーが正しくありません（サーバーの設定を確認してください）";
