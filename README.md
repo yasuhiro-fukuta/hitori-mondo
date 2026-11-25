@@ -55,6 +55,8 @@ privacy.html / terms.html / tokushoho.html
 | `PLAY_PACKAGE_NAME` | Play 公開時。パッケージ名（例 `jp.fromscratch.hitorimondo`） |
 | `PLAY_SERVICE_ACCOUNT` | Play 公開時。購入確認用のサービスアカウント鍵（JSON） |
 | `APP_PASSCODE` | 任意。オーナー用の合言葉（入れると無制限） |
+| `DEV_PASSPHRASE` | 任意。開発者の合言葉。会話の最初のメッセージの冒頭に書くと、その会話は回数制限・課金チェックなし（ログイン中のGoogleアカウントが `ravnicaguild@gmail.com` のときだけ。空なら無効） |
+| `DEV_OWNER_EMAILS` / `DEV_OWNER_UIDS` | 任意。上の合言葉が効くアカウントの変更（カンマ区切り） |
 | `USD_JPY` | 任意。原価計算の為替（既定 160） |
 
 設定後に再デプロイ。Production と Preview の両方にチェックを入れる。
